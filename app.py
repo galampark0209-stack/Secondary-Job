@@ -3,102 +3,117 @@ import pandas as pd
 import io
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Premix Plant 재고현황", layout="wide")
+st.set_page_config(page_title="Premix Plant 물류 경로 대시보드", layout="wide")
 
-# CSS: 화이트 테마 및 가시성 최적화
+# CSS: 선(Line) 및 하이라이트 효과 정의
 st.markdown("""
 <style>
     .stApp { background-color: #ffffff; color: #333333; }
     .section-title { 
         padding: 10px; background-color: #f1f3f5; border-left: 5px solid #007bff; 
-        margin: 20px 0; font-weight: bold; font-size: 18px; color: #212529;
+        margin: 10px 0; font-weight: bold; font-size: 16px;
     }
-    .silo-container { display: flex; flex-wrap: wrap; gap: 15px; justify-content: flex-start; padding: 20px; }
+    .main-layout { position: relative; width: 100%; padding: 20px; }
+    
+    /* 사일로 컨테이너 */
+    .row-container { display: flex; justify-content: space-around; margin-bottom: 80px; position: relative; z-index: 2; }
+    .silo-group { display: flex; gap: 15px; }
+
     .silo {
-        width: 100px; height: 140px; background-color: #f8f9fa;
-        border: 2px solid #dee2e6; border-radius: 5px 5px 20px 20px;
+        width: 90px; height: 120px; background-color: #f8f9fa;
+        border: 2px solid #dee2e6; border-radius: 5px 5px 15px 15px;
         position: relative; overflow: hidden; display: flex; flex-direction: column;
         align-items: center; justify-content: center; text-align: center;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
-    .silo-fill {
-        position: absolute; bottom: 0; left: 0; width: 100%;
-        background-color: rgba(0, 123, 255, 0.4); z-index: 1; transition: height 0.5s;
-    }
+    .silo-fill { position: absolute; bottom: 0; left: 0; width: 100%; background-color: rgba(0, 123, 255, 0.4); z-index: 1; }
     .silo-label { z-index: 2; font-size: 11px; font-weight: bold; color: #212529; }
     .prod-label { z-index: 2; font-size: 9px; color: #6c757d; }
-    .qty-label { z-index: 2; font-size: 12px; font-weight: bold; color: #d9480f; }
-    .connected { border-color: #007bff !important; border-width: 3px !important; }
+    .qty-label { z-index: 2; font-size: 11px; font-weight: bold; color: #d9480f; }
+
+    /* SVG 연결선 스타일 */
+    .svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+    .base-path { fill: none; stroke: #e9ecef; stroke-width: 2; transition: all 0.3s; }
+    .active-path { stroke: #007bff; stroke-width: 5; stroke-linecap: round; filter: drop-shadow(0 0 5px rgba(0, 123, 255, 0.5)); }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏭 Premix Plant 실시간 재고 관리 시스템")
+st.title("🏭 Premix Plant 물류 이동 및 재고 현황")
 
 # 2. 데이터 입력
 st.sidebar.header("📥 데이터 입력")
-raw_input = st.sidebar.text_area("쿼리 결과 붙여넣기 ([탱크][제품][재고])", height=300)
-
+raw_input = st.sidebar.text_area("쿼리 결과 붙여넣기", height=300)
 data_dict = {}
+
 if raw_input.strip():
     try:
         df = pd.read_csv(io.StringIO(raw_input), sep=r'\s+', skiprows=1, names=['tank', 'prod', 'qty'])
         for _, row in df.iterrows():
             q_val = float(str(row['qty']).replace(',', ''))
             data_dict[row['tank']] = {"p": row['prod'], "q": q_val}
-        st.sidebar.success(f"로드 완료: {len(data_dict)}건")
-    except Exception as e:
+    except:
         st.sidebar.error("데이터 형식을 확인해주세요.")
 
-# 3. 사일로 렌더링 함수
-def draw_silo(name, max_cap, connected=False):
+# 3. 렌더링 함수
+def draw_silo_html(name, max_cap):
     info = data_dict.get(name)
-    conn_cls = "connected" if connected else ""
     if info:
         pct = min(100, (info['q'] / max_cap) * 100)
-        fill_html = f'<div class="silo-fill" style="height:{pct}%;"></div>'
-        return f'<div class="silo {conn_cls}">{fill_html}<span class="silo-label">{name}</span><span class="prod-label">{info["p"]}</span><span class="qty-label">{info["q"]:,.1f}</span><span style="font-size:8px; color:#adb5bd;">{max_cap}T</span></div>'
-    return f'<div class="silo {conn_cls}" style="opacity:0.3; background-color:#e9ecef;"><span class="silo-label">{name}</span><span style="font-size:8px;">OFFLINE</span></div>'
+        return f"""
+        <div class="silo">
+            <div class="silo-fill" style="height:{pct}%;"></div>
+            <span class="silo-label">{name}</span>
+            <span class="prod-label">{info['p']}</span>
+            <span class="qty-label">{info['q']:,.1f}</span>
+        </div>"""
+    return f'<div class="silo" style="opacity:0.3;"><span class="silo-label">{name}</span></div>'
 
-# 4. 레이아웃 배치
-st.markdown('<div class="section-title">Step 1. 버퍼 사일로 (Buffer Silos - Supply)</div>', unsafe_allow_html=True)
-g1_html = '<div class="silo-container">'
-for i in range(101, 105):
-    g1_html += draw_silo(f"B{i}", 80, connected=True)
-g1_html += '</div>'
-st.markdown(g1_html, unsafe_allow_html=True)
+# 4. 화면 구성
+st.markdown('<div class="section-title">Upper: Buffer Silos (Supply)</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-title">Step 2. 메인 생산 사일로 (Connected via #1 Rule)</div>', unsafe_allow_html=True)
-col1, col2 = st.columns(2)
-with col1:
-    st.write("🔹 신설 사일로 (Group 2 / 40T)")
-    g2_html = '<div class="silo-container">'
-    for i in range(101, 107):
-        g2_html += draw_silo(f"S{i}", 40, connected=True)
-    g2_html += '</div>'
-    st.markdown(g2_html, unsafe_allow_html=True)
+# 상단 버퍼 사일로 렌더링
+b_tanks = [f"B{i}" for i in range(101, 105)]
+s_new_tanks = [f"S{i}" for i in range(101, 105)] # 신설 4개
+s_old_tanks = [f"S{i}" for i in range(109, 114)] # 구설 5개
 
-with col2:
-    st.write("🔹 구설 사일로 (Group 4 / 18T)")
-    g4_html = '<div class="silo-container">'
-    for i in range(109, 114):
-        g4_html += draw_silo(f"S{i}", 18, connected=True)
-    g4_html += '</div>'
-    st.markdown(g4_html, unsafe_allow_html=True)
+# 레이아웃 시작
+html_layout = '<div class="main-layout">'
 
-st.markdown('<div class="section-title">Step 3. 전용 및 마이너 사일로 (Dedicated & Minor)</div>', unsafe_allow_html=True)
-col3, col4 = st.columns([1, 2])
-with col3:
-    st.write("🔹 설탕 사일로 (Group 3 / 40T)")
-    g3_html = '<div class="silo-container">'
-    for i in [107, 108]:
-        g3_html += draw_silo(f"S{i}", 40)
-    g3_html += '</div>'
-    st.markdown(g3_html, unsafe_allow_html=True)
+# SVG 선 그리기 로직 (상상도 기반 좌표)
+svg_paths = ""
+for b in b_tanks:
+    b_info = data_dict.get(b)
+    # 신설 사일로 연결
+    for s_n in s_new_tanks:
+        sn_info = data_dict.get(s_n)
+        is_active = "active-path" if (b_info and sn_info and b_info['p'] == sn_info['p']) else ""
+        # 실제로는 좌표 계산이 필요하나 시각적 구조 표현을 위해 클래스 분기만 처리
+        # (이 데모에서는 시각적 구조를 위해 active 여부만 html에 포함)
+    
+# 상단 그룹
+html_layout += '<div class="row-container"><div class="silo-group">'
+for b in b_tanks: html_layout += draw_silo_html(b, 80)
+html_layout += '</div></div>'
 
-with col4:
-    st.write("🔹 마이너 사일로 (Group 5 / 5T)")
-    g5_html = '<div class="silo-container">'
-    for i in range(14, 22):
-        g5_html += draw_silo(f"S{i}", 5)
-    g5_html += '</div>'
-    st.markdown(g5_html, unsafe_allow_html=True)
+# 하단 그룹 (신설 & 구설)
+st.markdown('<div class="section-title">Lower: New & Old Silos (Receiving)</div>', unsafe_allow_html=True)
+html_layout += '<div class="row-container">'
+html_layout += '<div class="silo-group">'
+for s in s_new_tanks:
+    # 제품명 비교하여 테두리 강조 추가
+    is_match = any(data_dict.get(b, {}).get('p') == data_dict.get(s, {}).get('p') for b in b_tanks if data_dict.get(s))
+    style = "border:3px solid #007bff; box-shadow: 0 0 10px rgba(0,123,255,0.3);" if is_match else ""
+    html_layout += f'<div style="{style}">{draw_silo_html(s, 40)}</div>'
+html_layout += '</div>'
+
+html_layout += '<div class="silo-group">'
+for s in s_old_tanks:
+    is_match = any(data_dict.get(b, {}).get('p') == data_dict.get(s, {}).get('p') for b in b_tanks if data_dict.get(s))
+    style = "border:3px solid #007bff; box-shadow: 0 0 10px rgba(0,123,255,0.3);" if is_match else ""
+    html_layout += f'<div style="{style}">{draw_silo_html(s, 18)}</div>'
+html_layout += '</div></div>'
+
+html_layout += '</div>'
+st.markdown(html_layout, unsafe_allow_html=True)
+
+# 하단 정보 가이드
+st.info("💡 상단(Buffer)과 하단(New/Old)의 제품명이 일치하면 파란색 테두리로 연결 경로를 강조합니다.")
