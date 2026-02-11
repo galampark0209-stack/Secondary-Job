@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import io
 
-# 1. 페이지 설정 (Page Configuration)
+# 1. 페이지 설정
 st.set_page_config(page_title="Premix Plant Orthogonal Layout", layout="wide")
 
-# CSS: 직교 배관 및 화이트 테마 UI
 st.markdown("""
 <style>
     .stApp { background-color: #ffffff; color: #333333; }
@@ -15,7 +14,7 @@ st.markdown("""
         position: absolute; width: 75px; height: 100px; background-color: #f8f9fa;
         border: 2px solid #adb5bd; border-radius: 5px 5px 12px 12px;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
-        z-index: 10; text-align: center;
+        z-index: 10; text-align: center; transform: translateX(-50%); /* 중심 정렬을 위해 추가 */
     }
     .silo-fill { position: absolute; bottom: 0; left: 0; width: 100%; background-color: rgba(0, 123, 255, 0.4); z-index: 1; transition: height 0.5s; }
     .silo-label { z-index: 2; font-size: 10px; font-weight: bold; }
@@ -27,11 +26,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏭 Premix Plant 직교 배관 및 재고 관리")
+st.title("🏭 Premix Plant 정밀 정렬 배관 시스템")
 
-# 2. 데이터 처리 (Data Processing)
+# 2. 데이터 처리
 st.sidebar.header("📥 Data Input")
-raw_input = st.sidebar.text_area("데이터 붙여넣기 ([탱크][제품][재고])", height=250)
+raw_input = st.sidebar.text_area("데이터 붙여넣기", height=200)
 data = {}
 if raw_input.strip():
     try:
@@ -40,50 +39,49 @@ if raw_input.strip():
             data[r['t']] = {"p": r['p'], "q": float(str(r['q']).replace(',', ''))}
     except: st.sidebar.error("Data Format Error")
 
-# 3. 좌표 및 설정 (Coordinates & Settings)
-b_coords = {f"B{i}": (180 + (i-101)*240, 80) for i in range(101, 105)}
+# 3. 좌표 설정 (중심점 기준)
+# 각 사일로의 '중앙 X좌표'를 기준으로 설정합니다.
+b_coords = {f"B{i}": (200 + (i-101)*240, 80) for i in range(101, 105)}
+sn_coords = {f"S{i}": (150 + (i-101)*150, 450) for i in range(101, 105)}
+so_coords = {f"S{i}": (700 + (i-109)*120, 700) for i in range(109, 114)}
+
 sn_targets = [f"S{i}" for i in range(101, 105)]
 so_targets = [f"S{i}" for i in range(109, 114)]
 
-sn_coords = {f"S{i}": (100 + (i-101)*120, 450) for i in range(101, 105)}
-so_coords = {f"S{i}": (650 + (i-109)*110, 700) for i in range(109, 114)}
-
-# 4. 배관 렌더링 (Manifold 구조 - 입체 교차 적용)
+# 4. 배관 렌더링 (정밀 정렬 및 입체 교차)
 def draw_manifold_pipes():
     paths = ""
-    # 수평 배관이 지나가는 기준 높이
     h_level_new = 240
-    h_level_old = 280
+    h_level_old = 300 # 교차 가시성을 위해 간격 조정
     
-    for b_name, b_pos in b_coords.items():
+    for b_name, bx_center in b_coords.items():
         b_info = data.get(b_name)
-        bx, by = b_pos[0] + 37, b_pos[1] + 100
+        bx, by_bottom = bx_center[0], bx_center[1] + 100 # 사일로 바닥 중앙
         
-        # 신설 그룹행 (Horizontal level 240)
+        # 신설 그룹 (S101-104)
         for sn_name in sn_targets:
             sn_pos = sn_coords.get(sn_name)
             sn_info = data.get(sn_name)
             active = "pipe-active" if (b_info and sn_info and b_info['p'] == sn_info['p']) else "pipe-base"
-            snx, sny = sn_pos[0] + 37, sn_pos[1]
+            snx, sny_top = sn_pos[0], sn_pos[1] # 타겟 사일로 상단 중앙
             
-            # 수직으로 내려와서(V) 수평으로 가는데(H), 시작점의 수직선(bx)을 피하기 위해 아크(a) 삽입
-            path_d = f"M {bx} {by} V {h_level_new} H {bx-10} a 10 10 0 0 1 20 0 H {snx} V {sny}"
+            # 경로: 수직 하강 -> 시작점 수직선 우회(Jump) -> 수평 이동 -> 수직 하강
+            path_d = f"M {bx} {by_bottom} V {h_level_new} H {bx-10} a 10 10 0 0 1 20 0 H {snx} V {sny_top}"
             paths += f'<path class="{active}" d="{path_d}" />'
 
-        # 구설 그룹행 (Horizontal level 280)
+        # 구설 그룹 (S109-113)
         for so_name in so_targets:
             so_pos = so_coords.get(so_name)
             so_info = data.get(so_name)
             active = "pipe-active" if (b_info and so_info and b_info['p'] == so_info['p']) else "pipe-base"
-            sox, soy = so_pos[0] + 37, so_pos[1]
+            sox, soy_top = so_pos[0], so_pos[1]
             
-            # 동일하게 시작 수직선 위치에서 점프
-            path_d = f"M {bx} {by} V {h_level_old} H {bx-10} a 10 10 0 0 1 20 0 H {sox} V {soy}"
+            path_d = f"M {bx} {by_bottom} V {h_level_old} H {bx-10} a 10 10 0 0 1 20 0 H {sox} V {soy_top}"
             paths += f'<path class="{active}" d="{path_d}" />'
             
     return paths
 
-# 5. 사일로 HTML 생성 (Silo Generation)
+# 5. 사일로 생성 함수
 def get_silo(name, x, y, cap):
     info = data.get(name)
     pct = min(100, (info['q']/cap)*100) if info else 0
@@ -96,23 +94,14 @@ def get_silo(name, x, y, cap):
         <div class="qty-label">{qty}</div>
     </div>"""
 
-# 6. 레이아웃 조립 (Layout Assembly)
+# 6. 레이아웃 조립
 main_html = f'<div class="main-container">'
 main_html += f'<svg class="pipe-svg" viewBox="0 0 1300 900">{draw_manifold_pipes()}</svg>'
 
-# 그룹 사일로 그리기
+# 사일로 배치 (정의된 중심 좌표 사용)
 for name, pos in b_coords.items(): main_html += get_silo(name, pos[0], pos[1], 80)
 for name, pos in sn_coords.items(): main_html += get_silo(name, pos[0], pos[1], 40)
 for name, pos in so_coords.items(): main_html += get_silo(name, pos[0], pos[1], 18)
-
-# 기타 사일로
-others = {
-    "S105": (100 + 4*120, 450), 
-    "S106": (100 + 5*120, 450), 
-    "S107": (100, 700), 
-    "S108": (210, 700)
-}
-for name, pos in others.items(): main_html += get_silo(name, pos[0], pos[1], 40)
 
 main_html += '</div>'
 st.markdown(main_html, unsafe_allow_html=True)
